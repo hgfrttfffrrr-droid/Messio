@@ -33,6 +33,7 @@ jobs:
           flutter pub get
 
       - name: Fix old emoji picker
+        shell: bash
         run: |
           PACKAGE_DIR=$(find "$HOME/.pub-cache/hosted/pub.dev" \
             -maxdepth 1 -type d \
@@ -43,8 +44,13 @@ jobs:
             exit 1
           fi
 
-          sed -i 's/FlatButton(/TextButton(/g' \
-            "$PACKAGE_DIR/lib/emoji_picker.dart"
+          FILE="$PACKAGE_DIR/lib/emoji_picker.dart"
+
+          sed -i 's/FlatButton(/TextButton(/g' "$FILE"
+
+          sed -i \
+            's/padding: EdgeInsets.all(0),/style: TextButton.styleFrom(padding: EdgeInsets.all(0)),/g' \
+            "$FILE"
 
       - name: Build APK
         run: flutter build apk --debug
