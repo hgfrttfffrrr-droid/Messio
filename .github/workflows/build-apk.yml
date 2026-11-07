@@ -32,32 +32,32 @@ jobs:
           flutter doctor -v
           flutter pub get
 
-      - name: Fix deprecated Flutter buttons
+      - name: Fix deprecated buttons
         shell: bash
         run: |
           python3 <<'PY'
           from pathlib import Path
           import re
 
-          files = [
+          # Fix old buttons in application source files.
+          app_files = [
               Path("lib/pages/register_page.dart"),
               Path("lib/pages/settings_page.dart"),
               Path("lib/widgets/number_picker.dart"),
           ]
 
-          for file in files:
+          for file in app_files:
               if not file.exists():
-                  raise SystemExit(f"File not found: {file}")
+                  raise SystemExit(f"Missing file: {file}")
 
               text = file.read_text()
-
               text = text.replace("FlatButton.icon(", "TextButton.icon(")
               text = text.replace("FlatButton(", "TextButton(")
               text = text.replace("RaisedButton(", "ElevatedButton(")
-
               file.write_text(text)
               print("Updated:", file)
 
+          # Locate emoji_picker package.
           cache = Path.home() / ".pub-cache/hosted"
           packages = list(cache.glob("*/emoji_picker-0.1.0/lib/emoji_picker.dart"))
 
@@ -69,8 +69,47 @@ jobs:
 
           text = text.replace("FlatButton(", "TextButton(")
 
+          # Replace padding only inside TextButton constructors.
+          positions = []
+          search_from = 0
+
+          while True:
+              start = text.find("TextButton(", search_from)
+              if start == -1:
+                  break
+
+              opening = start + len("TextButton")
+              depth = 0
+              end = None
+
+              for i in range(opening, len(text)):
+                  if text[i] == "(":
+                      depth += 1
+                  elif text[i] == ")":
+                      depth -= 1
+                      if depth == 0:
+                          end = i
+                          break
+
+              if end is None:
+                  raise SystemExit("Unclosed TextButton constructor")
+
+              block = text[start:end + 1]
+
+              block = re.sub(
+                  r'padding:\s*EdgeInsets\.all\(0\)\s*,',
+                  'style: TextButton.styleFrom(padding: EdgeInsets.all(0)),',
+                  block
+              )
+
+              positions.append((start, end + 1, block))
+              search_from = end + 1
+
+          for start, end, block in reversed(positions):
+              text = text[:start] + block + text[end:]
+
           file.write_text(text)
-          print("Updated:", file)
+          print("Fixed emoji_picker TextButton padding.")
           PY
 
       - name: Build APK
