@@ -32,7 +32,21 @@ jobs:
           flutter doctor -v
           flutter pub get
 
-      - name: Build Android APK
+      - name: Fix old emoji picker
+        run: |
+          PACKAGE_DIR=$(find "$HOME/.pub-cache/hosted/pub.dev" \
+            -maxdepth 1 -type d \
+            -name 'emoji_picker-*' | head -n 1)
+
+          if [ -z "$PACKAGE_DIR" ]; then
+            echo "emoji_picker package not found"
+            exit 1
+          fi
+
+          sed -i 's/FlatButton(/TextButton(/g' \
+            "$PACKAGE_DIR/lib/emoji_picker.dart"
+
+      - name: Build APK
         run: flutter build apk --debug
 
       - name: Upload APK
