@@ -23,7 +23,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.7.12'
+          flutter-version: '3.3.10'
           channel: stable
           cache: true
 
@@ -31,34 +31,6 @@ jobs:
         run: |
           flutter doctor -v
           flutter pub get
-
-      - name: Fix old emoji picker
-        shell: bash
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-          import re
-
-          cache = Path.home() / ".pub-cache/hosted/pub.dev"
-          packages = sorted(cache.glob("emoji_picker-*"))
-
-          if not packages:
-              raise SystemExit("emoji_picker package not found")
-
-          file = packages[0] / "lib/emoji_picker.dart"
-          source = file.read_text()
-
-          source = source.replace("FlatButton(", "TextButton(")
-
-          source = re.sub(
-              r'(?m)^(\s*)padding:\s*EdgeInsets\.all\(0\),',
-              r'\1style: TextButton.styleFrom(padding: EdgeInsets.all(0)),',
-              source
-          )
-
-          file.write_text(source)
-          print("Emoji picker patched:", file)
-          PY
 
       - name: Build APK
         run: flutter build apk --debug
