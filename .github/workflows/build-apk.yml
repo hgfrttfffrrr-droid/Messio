@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Fix old Flutter buttons
+      - name: Migrate old buttons
         shell: bash
         run: |
           python3 <<'PY'
@@ -38,12 +38,11 @@ jobs:
           import re
 
           def split_args(source):
-              parts = []
+              result = []
               start = 0
               stack = []
               quote = None
               escaped = False
-
               pairs = {')': '(', ']': '[', '}': '{'}
 
               for i, ch in enumerate(source):
@@ -64,18 +63,23 @@ jobs:
                       if stack and stack[-1] == pairs[ch]:
                           stack.pop()
                   elif ch == ',' and not stack:
-                      parts.append(source[start:i].strip())
+                      if source[start:i].strip():
+                          result.append(source[start:i].strip())
                       start = i + 1
 
               if source[start:].strip():
-                  parts.append(source[start:].strip())
+                  result.append(source[start:].strip())
 
-              return parts
+              return result
 
-          def patch_text_buttons(source):
-              matches = list(re.finditer(r'\bTextButton\s*\(', source))
+          def migrate(source):
+              pattern = re.compile(r'\bTextButton\s*\(')
 
-              for match in reversed(matches):
+              while True:
+                  match = pattern.search(source)
+                  if not match:
+                      break
+
                   opening = source.find('(', match.start())
                   depth = 0
                   quote = None
@@ -105,59 +109,55 @@ jobs:
                               break
 
                   if closing is None:
-                      raise RuntimeError("Unclosed TextButton")
+                      raise RuntimeError("Invalid TextButton constructor")
 
-                  body = source[opening + 1:closing]
-                  args = split_args(body)
+                  args = split_args(source[opening + 1:closing])
 
-                  kept = []
-                  padding = None
-                  color = None
-                  style = None
+                  normal = []
+                  style_values = {}
 
                   for arg in args:
                       item = re.match(r'^(\w+)\s*:\s*(.*)$', arg, re.S)
 
                       if not item:
-                          kept.append(arg)
+                          normal.append(arg)
                           continue
 
                       name, value = item.groups()
 
-                      if name == 'padding':
-                          padding = value
-                      elif name == 'color':
-                          color = value
-                      elif name == 'style':
-                          style = value
+                      mapping = {
+                          'padding': 'padding',
+                          'color': 'backgroundColor',
+                          'shape': 'shape',
+                      }
+
+                      if name in mapping:
+                          style_values[mapping[name]] = value.strip()
                       else:
-                          kept.append(arg)
+                          normal.append(arg)
 
-                  if style and 'TextButton.styleFrom(' in style:
-                      inner = style[style.find('(') + 1:style.rfind(')')]
-                      style_args = split_args(inner)
-                      for item in style_args:
-                          if item.startswith('padding:'):
-                              padding = item.split(':', 1)[1].strip()
-                          elif item.startswith('backgroundColor:'):
-                              color = item.split(':', 1)[1].strip()
-                          else:
-                              kept_style = item
-                              if 'extra_style' not in locals():
-                                  extra_style = []
-                              extra_style.append(kept_style)
+                  if style_values:
+                      existing = [
+                          x for x in normal
+                          if re.match(r'^style\s*:', x)
+                      ]
 
-                  if padding or color or style:
-                      style_parts = []
-                      if padding:
-                          style_parts.append('padding: ' + padding)
-                      if color:
-                          style_parts.append('backgroundColor: ' + color)
+                      if existing:
+                          raise RuntimeError(
+                              "TextButton already has style; manual merge needed"
+                          )
 
-                      style_arg = 'style: TextButton.styleFrom(' + ', '.join(style_parts) + ')'
-                      kept.append(style_arg)
+                      values = [
+                          f'{key}: {value}'
+                          for key, value in style_values.items()
+                      ]
 
-                  replacement = 'TextButton(' + ', '.join(kept) + ')'
+                      normal.append(
+                          'style: TextButton.styleFrom(' +
+                          ', '.join(values) + ')'
+                      )
+
+                  replacement = 'TextButton(' + ', '.join(normal) + ')'
                   source = source[:match.start()] + replacement + source[closing + 1:]
 
               return source
@@ -169,26 +169,28 @@ jobs:
           ]
 
           for file in app_files:
-              text = file.read_text()
-              text = text.replace("FlatButton.icon(", "TextButton.icon(")
-              text = text.replace("FlatButton(", "TextButton(")
-              text = text.replace("RaisedButton(", "ElevatedButton(")
-              file.write_text(text)
+              source = file.read_text()
+              source = source.replace("FlatButton.icon(", "TextButton.icon(")
+              source = source.replace("FlatButton(", "TextButton(")
+              source = source.replace("RaisedButton(", "ElevatedButton(")
+              file.write_text(source)
               print("Updated:", file)
 
           cache = Path.home() / ".pub-cache/hosted"
-          packages = list(cache.glob("*/emoji_picker-0.1.0/lib/emoji_picker.dart"))
+          packages = list(
+              cache.glob("*/emoji_picker-0.1.0/lib/emoji_picker.dart")
+          )
 
           if not packages:
-              raise SystemExit("emoji_picker not found")
+              raise SystemExit("emoji_picker package not found")
 
           file = packages[0]
           source = file.read_text()
           source = source.replace("FlatButton(", "TextButton(")
-          source = patch_text_buttons(source)
+          source = migrate(source)
           file.write_text(source)
 
-          print("Emoji picker buttons patched successfully.")
+          print("Emoji picker migration completed.")
           PY
 
       - name: Build APK
