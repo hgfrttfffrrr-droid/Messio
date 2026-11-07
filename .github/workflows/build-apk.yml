@@ -35,22 +35,30 @@ jobs:
       - name: Fix old emoji picker
         shell: bash
         run: |
-          PACKAGE_DIR=$(find "$HOME/.pub-cache/hosted/pub.dev" \
-            -maxdepth 1 -type d \
-            -name 'emoji_picker-*' | head -n 1)
+          python3 <<'PY'
+          from pathlib import Path
+          import re
 
-          if [ -z "$PACKAGE_DIR" ]; then
-            echo "emoji_picker package not found"
-            exit 1
-          fi
+          cache = Path.home() / ".pub-cache/hosted/pub.dev"
+          packages = sorted(cache.glob("emoji_picker-*"))
 
-          FILE="$PACKAGE_DIR/lib/emoji_picker.dart"
+          if not packages:
+              raise SystemExit("emoji_picker package not found")
 
-          sed -i 's/FlatButton(/TextButton(/g' "$FILE"
+          file = packages[0] / "lib/emoji_picker.dart"
+          source = file.read_text()
 
-          sed -i \
-            's/padding: EdgeInsets.all(0),/style: TextButton.styleFrom(padding: EdgeInsets.all(0)),/g' \
-            "$FILE"
+          source = source.replace("FlatButton(", "TextButton(")
+
+          source = re.sub(
+              r'(?m)^(\s*)padding:\s*EdgeInsets\.all\(0\),',
+              r'\1style: TextButton.styleFrom(padding: EdgeInsets.all(0)),',
+              source
+          )
+
+          file.write_text(source)
+          print("Emoji picker patched:", file)
+          PY
 
       - name: Build APK
         run: flutter build apk --debug
