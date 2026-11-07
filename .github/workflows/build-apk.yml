@@ -32,64 +32,45 @@ jobs:
           flutter doctor -v
           flutter pub get
 
-      - name: Fix emoji picker compatibility
+      - name: Fix deprecated Flutter buttons
         shell: bash
         run: |
           python3 <<'PY'
           from pathlib import Path
+          import re
+
+          files = [
+              Path("lib/pages/register_page.dart"),
+              Path("lib/pages/settings_page.dart"),
+              Path("lib/widgets/number_picker.dart"),
+          ]
+
+          for file in files:
+              if not file.exists():
+                  raise SystemExit(f"File not found: {file}")
+
+              text = file.read_text()
+
+              text = text.replace("FlatButton.icon(", "TextButton.icon(")
+              text = text.replace("FlatButton(", "TextButton(")
+              text = text.replace("RaisedButton(", "ElevatedButton(")
+
+              file.write_text(text)
+              print("Updated:", file)
 
           cache = Path.home() / ".pub-cache/hosted"
-          files = list(cache.glob("*/emoji_picker-0.1.0/lib/emoji_picker.dart"))
+          packages = list(cache.glob("*/emoji_picker-0.1.0/lib/emoji_picker.dart"))
 
-          if not files:
+          if not packages:
               raise SystemExit("emoji_picker source not found")
 
-          file = files[0]
-          source = file.read_text()
+          file = packages[0]
+          text = file.read_text()
 
-          marker = "class _EmojiPickerState extends State<EmojiPicker> {"
+          text = text.replace("FlatButton(", "TextButton(")
 
-          compatibility = """
-          // Compatibility replacement for the removed Flutter FlatButton.
-          class FlatButton extends StatelessWidget {
-            final VoidCallback onPressed;
-            final Widget child;
-            final EdgeInsetsGeometry padding;
-            final Color color;
-            final ShapeBorder shape;
-
-            FlatButton({
-              Key key,
-              this.onPressed,
-              this.child,
-              this.padding,
-              this.color,
-              this.shape,
-            }) : super(key: key);
-
-            @override
-            Widget build(BuildContext context) {
-              return TextButton(
-                style: TextButton.styleFrom(
-                  backgroundColor: color,
-                  padding: padding,
-                  shape: shape,
-                ),
-                onPressed: onPressed,
-                child: child,
-              );
-            }
-          }
-
-          """
-
-          if "class FlatButton extends StatelessWidget" not in source:
-              if marker not in source:
-                  raise SystemExit("Could not find insertion point")
-              source = source.replace(marker, compatibility + marker, 1)
-              file.write_text(source)
-
-          print("Emoji picker compatibility patch applied.")
+          file.write_text(text)
+          print("Updated:", file)
           PY
 
       - name: Build APK
